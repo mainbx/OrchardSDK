@@ -30,3 +30,9 @@ export interface ProviderMessage {
   readonly subject?: string;
   readonly bodySnippet?: string;
 }
+
+export interface EmailProvider {
+  sendMessage(to: string, subject: string, body: string, attachments?: File[]): Promise<void>;
+  listThreads(): Promise<ProviderThread[]>;
+  listMessages(threadId: string): Promise<ProviderMessage[]>;
+}

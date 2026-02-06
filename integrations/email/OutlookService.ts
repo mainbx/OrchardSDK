@@ -1,4 +1,5 @@
 import type { File, ProviderMessage, ProviderThread } from "./types.js";
+import { BaseEmailService } from "./BaseEmailService.js";
 
 export interface OutlookServiceConfig {
   readonly tenantId?: string;
@@ -15,8 +16,13 @@ export interface OutlookServiceConfig {
  * - Use Microsoft Graph Mail APIs for threads/messages.
  * - Map Graph conversation IDs to Orchard thread references.
  */
-export class OutlookService {
-  constructor(private readonly config: OutlookServiceConfig = {}) {}
+export class OutlookService extends BaseEmailService {
+  private readonly config: OutlookServiceConfig;
+
+  constructor(config: OutlookServiceConfig = {}) {
+    super();
+    this.config = config;
+  }
 
   async sendMessage(
     to: string,
@@ -24,6 +30,7 @@ export class OutlookService {
     body: string,
     attachments?: File[],
   ): Promise<void> {
+    this.assertEmailAddress(to, "to");
     this.assertNonEmptyString(to, "to");
     this.assertNonEmptyString(subject, "subject");
     this.assertNonEmptyString(body, "body");
@@ -53,19 +60,7 @@ export class OutlookService {
     return [];
   }
 
-  private assertConfigured(): void {
+  protected assertConfigured(): void {
     void this.config;
-  }
-
-  private assertNonEmptyString(value: string, fieldName: string): void {
-    if (!value.trim()) {
-      throw new Error(`'${fieldName}' must be a non-empty string.`);
-    }
-  }
-
-  private assertNoHeaderInjection(value: string, fieldName: string): void {
-    if (value.includes("\r") || value.includes("\n")) {
-      throw new Error(`'${fieldName}' must not include CR/LF characters.`);
-    }
   }
 }

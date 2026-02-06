@@ -1,4 +1,5 @@
 import type { File, ProviderMessage, ProviderThread } from "./types.js";
+import { BaseEmailService } from "./BaseEmailService.js";
 
 export interface GmailServiceConfig {
   readonly clientId?: string;
@@ -15,8 +16,13 @@ export interface GmailServiceConfig {
  * - Use access tokens to call Gmail REST APIs for thread/message operations.
  * - Support MIME creation and upload flow for attachments.
  */
-export class GmailService {
-  constructor(private readonly config: GmailServiceConfig = {}) {}
+export class GmailService extends BaseEmailService {
+  private readonly config: GmailServiceConfig;
+
+  constructor(config: GmailServiceConfig = {}) {
+    super();
+    this.config = config;
+  }
 
   async sendMessage(
     to: string,
@@ -24,6 +30,7 @@ export class GmailService {
     body: string,
     attachments?: File[],
   ): Promise<void> {
+    this.assertEmailAddress(to, "to");
     this.assertNonEmptyString(to, "to");
     this.assertNonEmptyString(subject, "subject");
     this.assertNonEmptyString(body, "body");
@@ -53,19 +60,7 @@ export class GmailService {
     return [];
   }
 
-  private assertConfigured(): void {
+  protected assertConfigured(): void {
     void this.config;
-  }
-
-  private assertNonEmptyString(value: string, fieldName: string): void {
-    if (!value.trim()) {
-      throw new Error(`'${fieldName}' must be a non-empty string.`);
-    }
-  }
-
-  private assertNoHeaderInjection(value: string, fieldName: string): void {
-    if (value.includes("\r") || value.includes("\n")) {
-      throw new Error(`'${fieldName}' must not include CR/LF characters.`);
-    }
   }
 }

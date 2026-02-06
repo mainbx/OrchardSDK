@@ -1,4 +1,5 @@
 import type { File, ProviderMessage, ProviderThread } from "./types.js";
+import { BaseEmailService } from "./BaseEmailService.js";
 
 export interface ProtonMailServiceConfig {
   readonly bridgeHost?: string;
@@ -15,8 +16,13 @@ export interface ProtonMailServiceConfig {
  * - Authenticate with Bridge-generated IMAP/SMTP credentials.
  * - Implement send/list operations through IMAP/SMTP clients.
  */
-export class ProtonMailService {
-  constructor(private readonly config: ProtonMailServiceConfig = {}) {}
+export class ProtonMailService extends BaseEmailService {
+  private readonly config: ProtonMailServiceConfig;
+
+  constructor(config: ProtonMailServiceConfig = {}) {
+    super();
+    this.config = config;
+  }
 
   async sendMessage(
     to: string,
@@ -24,6 +30,7 @@ export class ProtonMailService {
     body: string,
     attachments?: File[],
   ): Promise<void> {
+    this.assertEmailAddress(to, "to");
     this.assertNonEmptyString(to, "to");
     this.assertNonEmptyString(subject, "subject");
     this.assertNonEmptyString(body, "body");
@@ -53,19 +60,7 @@ export class ProtonMailService {
     return [];
   }
 
-  private assertConfigured(): void {
+  protected assertConfigured(): void {
     void this.config;
-  }
-
-  private assertNonEmptyString(value: string, fieldName: string): void {
-    if (!value.trim()) {
-      throw new Error(`'${fieldName}' must be a non-empty string.`);
-    }
-  }
-
-  private assertNoHeaderInjection(value: string, fieldName: string): void {
-    if (value.includes("\r") || value.includes("\n")) {
-      throw new Error(`'${fieldName}' must not include CR/LF characters.`);
-    }
   }
 }

@@ -18,6 +18,7 @@ Each provider service exposes stub methods:
 - `listMessages(threadId)`
 
 The methods return placeholder values (or throw a stub error for sending) and include inline comments showing where real provider logic should be added.
+All provider stubs implement a shared `EmailProvider` shape and inherit common validation from `BaseEmailService`.
 
 ## Provider implementation considerations
 

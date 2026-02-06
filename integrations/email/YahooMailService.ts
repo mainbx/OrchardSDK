@@ -1,4 +1,5 @@
 import type { File, ProviderMessage, ProviderThread } from "./types.js";
+import { BaseEmailService } from "./BaseEmailService.js";
 
 export interface YahooMailServiceConfig {
   readonly clientId?: string;
@@ -16,8 +17,13 @@ export interface YahooMailServiceConfig {
  * - For mailbox sync/send, integrate IMAP/SMTP clients using app passwords or OAuth tokens.
  * - Normalize Yahoo message/thread identifiers into SDK-friendly objects.
  */
-export class YahooMailService {
-  constructor(private readonly config: YahooMailServiceConfig = {}) {}
+export class YahooMailService extends BaseEmailService {
+  private readonly config: YahooMailServiceConfig;
+
+  constructor(config: YahooMailServiceConfig = {}) {
+    super();
+    this.config = config;
+  }
 
   async sendMessage(
     to: string,
@@ -25,6 +31,7 @@ export class YahooMailService {
     body: string,
     attachments?: File[],
   ): Promise<void> {
+    this.assertEmailAddress(to, "to");
     this.assertNonEmptyString(to, "to");
     this.assertNonEmptyString(subject, "subject");
     this.assertNonEmptyString(body, "body");
@@ -54,19 +61,7 @@ export class YahooMailService {
     return [];
   }
 
-  private assertConfigured(): void {
+  protected assertConfigured(): void {
     void this.config;
-  }
-
-  private assertNonEmptyString(value: string, fieldName: string): void {
-    if (!value.trim()) {
-      throw new Error(`'${fieldName}' must be a non-empty string.`);
-    }
-  }
-
-  private assertNoHeaderInjection(value: string, fieldName: string): void {
-    if (value.includes("\r") || value.includes("\n")) {
-      throw new Error(`'${fieldName}' must not include CR/LF characters.`);
-    }
   }
 }
