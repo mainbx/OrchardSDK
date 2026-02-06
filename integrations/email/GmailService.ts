@@ -24,32 +24,48 @@ export class GmailService {
     body: string,
     attachments?: File[],
   ): Promise<void> {
+    this.assertNonEmptyString(to, "to");
+    this.assertNonEmptyString(subject, "subject");
+    this.assertNonEmptyString(body, "body");
+    this.assertNoHeaderInjection(subject, "subject");
     void attachments;
 
+    // TODO: Implement Gmail OAuth token exchange and storage.
+    // TODO: Implement Gmail API send call with MIME attachment support.
     // Placeholder: require OAuth credentials once real integration is implemented.
     // Expected credentials: clientId, clientSecret, redirectUri, refreshToken.
     this.assertConfigured();
-    throw new Error(
-      `GmailService.sendMessage is a stub. Target '${to}', subject '${subject}', body length ${body.length}.`,
-    );
+    throw new Error("GmailService.sendMessage is a stub and performs no network calls.");
   }
 
   async listThreads(): Promise<ProviderThread[]> {
+    // TODO: Implement Gmail threads.list pagination and response mapping.
     // Placeholder: call Gmail threads.list and normalize results.
     this.assertConfigured();
     return [];
   }
 
   async listMessages(threadId: string): Promise<ProviderMessage[]> {
+    this.assertNonEmptyString(threadId, "threadId");
+    // TODO: Implement Gmail threads.get / messages.get mapping for thread retrieval.
     // Placeholder: call Gmail threads.get / messages.get and normalize results.
     this.assertConfigured();
-    if (!threadId.trim()) {
-      throw new Error("threadId must be a non-empty string.");
-    }
     return [];
   }
 
   private assertConfigured(): void {
     void this.config;
+  }
+
+  private assertNonEmptyString(value: string, fieldName: string): void {
+    if (!value.trim()) {
+      throw new Error(`'${fieldName}' must be a non-empty string.`);
+    }
+  }
+
+  private assertNoHeaderInjection(value: string, fieldName: string): void {
+    if (value.includes("\r") || value.includes("\n")) {
+      throw new Error(`'${fieldName}' must not include CR/LF characters.`);
+    }
   }
 }

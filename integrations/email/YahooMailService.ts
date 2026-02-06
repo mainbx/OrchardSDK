@@ -25,32 +25,48 @@ export class YahooMailService {
     body: string,
     attachments?: File[],
   ): Promise<void> {
+    this.assertNonEmptyString(to, "to");
+    this.assertNonEmptyString(subject, "subject");
+    this.assertNonEmptyString(body, "body");
+    this.assertNoHeaderInjection(subject, "subject");
     void attachments;
 
+    // TODO: Implement Yahoo OAuth/app-password auth management.
+    // TODO: Implement SMTP/REST send flow and attachment handling.
     // Placeholder: requires Yahoo OAuth or IMAP/SMTP credentials.
     // Expected config: clientId/clientSecret/refreshToken or IMAP/SMTP credential pair.
     this.assertConfigured();
-    throw new Error(
-      `YahooMailService.sendMessage is a stub. Target '${to}', subject '${subject}', body length ${body.length}.`,
-    );
+    throw new Error("YahooMailService.sendMessage is a stub and performs no network calls.");
   }
 
   async listThreads(): Promise<ProviderThread[]> {
+    // TODO: Implement mailbox query and provider thread normalization.
     // Placeholder: fetch and map mailbox threads or emulate threads via headers.
     this.assertConfigured();
     return [];
   }
 
   async listMessages(threadId: string): Promise<ProviderMessage[]> {
+    this.assertNonEmptyString(threadId, "threadId");
+    // TODO: Implement message listing and thread correlation strategy.
     // Placeholder: fetch messages by provider-specific thread grouping.
     this.assertConfigured();
-    if (!threadId.trim()) {
-      throw new Error("threadId must be a non-empty string.");
-    }
     return [];
   }
 
   private assertConfigured(): void {
     void this.config;
+  }
+
+  private assertNonEmptyString(value: string, fieldName: string): void {
+    if (!value.trim()) {
+      throw new Error(`'${fieldName}' must be a non-empty string.`);
+    }
+  }
+
+  private assertNoHeaderInjection(value: string, fieldName: string): void {
+    if (value.includes("\r") || value.includes("\n")) {
+      throw new Error(`'${fieldName}' must not include CR/LF characters.`);
+    }
   }
 }

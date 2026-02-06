@@ -5,6 +5,10 @@ export interface File {
   readonly data?: Uint8Array;
 }
 
+/**
+ * Reserved for future adapter APIs that may accept a single message object
+ * instead of positional sendMessage parameters.
+ */
 export interface EmailMessageInput {
   readonly to: string;
   readonly subject: string;
