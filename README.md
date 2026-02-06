@@ -102,3 +102,11 @@ Verification is metadata only, not provider integration. A caller can enforce po
 - owner-only decision (`ownerOnly` default is `true`)
 
 For approvals (`decision = "approved"`), policy checks are enforced before the decision is recorded.
+
+## Security notes
+
+- The reference implementation is in-memory and assumes a single JavaScript runtime instance.
+- No locking is implemented; if you need cross-process consistency, use an external transactional store.
+- Public methods perform runtime validation so JavaScript callers cannot bypass TypeScript type contracts.
+- Inputs used in idempotency fingerprints must be deterministic and non-circular.
+- Secrets and provider credentials must be injected at runtime and never committed to source control.
