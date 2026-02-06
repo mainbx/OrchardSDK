@@ -4,13 +4,23 @@
   "description": "Transport-agnostic SDK for trusted communication between AI agents and humans.",
   "type": "module",
   "private": true,
-  "main": "dist/index.js",
-  "types": "dist/index.d.ts",
+  "main": "dist/src/index.js",
+  "types": "dist/src/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/src/index.d.ts",
+      "import": "./dist/src/index.js"
+    },
+    "./integrations/email": {
+      "types": "./dist/integrations/email/index.d.ts",
+      "import": "./dist/integrations/email/index.js"
+    }
+  },
   "files": [
     "dist"
   ],
   "scripts": {
-    "build": "tsc -p tsconfig.json",
+    "build": "rm -rf dist && tsc -p tsconfig.build.json",
     "test": "vitest run",
     "test:watch": "vitest",
     "example": "tsx examples/phase1.ts"
