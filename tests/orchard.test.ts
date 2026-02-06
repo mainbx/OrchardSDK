@@ -5,6 +5,7 @@ import {
   InMemoryOrchard,
   IdempotencyConflictError,
   PolicyViolationError,
+  ValidationError,
   type Clock,
   type IdGenerator,
 } from "../src/index.js";
@@ -386,5 +387,91 @@ describe("InMemoryOrchard", () => {
         .listPendingActionRequests({ threadId: threadB.id })
         .map((actionRequest) => actionRequest.id),
     ).toEqual([]);
+  });
+
+  it("rejects invalid runtime input for participant and decision fields", () => {
+    const orchard = createSdk();
+    const thread = orchard.createThread({ ownerId: "owner-1" });
+
+    expect(() =>
+      orchard.postMessage({
+        threadId: thread.id,
+        sender: {
+          type: "system" as "agent",
+          id: "bad",
+        },
+        body: "hello",
+      }),
+    ).toThrow(ValidationError);
+
+    const action = orchard.createActionRequest({
+      threadId: thread.id,
+      requestedBy: {
+        type: "agent",
+        id: "agent-alpha",
+      },
+      actionType: "noop",
+      payload: {},
+    });
+
+    expect(() =>
+      orchard.decideActionRequest({
+        actionRequestId: action.id,
+        decidedBy: {
+          type: "human",
+          id: "owner-1",
+        },
+        decision: "allow" as "approved",
+      }),
+    ).toThrow(ValidationError);
+  });
+
+  it("rejects circular idempotent payloads and detects map payload conflicts", () => {
+    const orchard = createSdk();
+    const thread = orchard.createThread({ ownerId: "owner-1" });
+
+    const circular: { self?: unknown } = {};
+    circular.self = circular;
+
+    expect(() =>
+      orchard.createActionRequest({
+        threadId: thread.id,
+        requestedBy: { type: "agent", id: "agent-alpha" },
+        actionType: "cycle",
+        payload: circular,
+        idempotencyKey: "cycle-1",
+      }),
+    ).toThrow(ValidationError);
+
+    orchard.createActionRequest({
+      threadId: thread.id,
+      requestedBy: { type: "agent", id: "agent-alpha" },
+      actionType: "map_payload",
+      payload: new Map([["env", "prod"]]),
+      idempotencyKey: "map-1",
+    });
+
+    expect(() =>
+      orchard.createActionRequest({
+        threadId: thread.id,
+        requestedBy: { type: "agent", id: "agent-alpha" },
+        actionType: "map_payload",
+        payload: new Map([["env", "staging"]]),
+        idempotencyKey: "map-1",
+      }),
+    ).toThrow(IdempotencyConflictError);
+  });
+
+  it("rejects unsupported metadata values that cannot be cloned safely", () => {
+    const orchard = createSdk();
+
+    expect(() =>
+      orchard.createThread({
+        ownerId: "owner-1",
+        metadata: {
+          bad: () => "not-cloneable",
+        },
+      }),
+    ).toThrow(ValidationError);
   });
 });
