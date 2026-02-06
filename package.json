@@ -1,0 +1,24 @@
+{
+  "name": "orchardsdk",
+  "version": "0.1.0",
+  "description": "Transport-agnostic SDK for trusted communication between AI agents and humans.",
+  "type": "module",
+  "private": true,
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "example": "tsx examples/phase1.ts"
+  },
+  "devDependencies": {
+    "@types/node": "^25.2.1",
+    "tsx": "^4.20.3",
+    "typescript": "^5.9.0",
+    "vitest": "^3.2.4"
+  }
+}
