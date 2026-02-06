@@ -1,0 +1,45 @@
+---
+title: Approval Workflow
+description: Human-in-the-loop approval flow with verification metadata.
+---
+
+## Pattern
+
+1. Agent creates an action request.
+2. Human owner approves or denies.
+3. Optional verification metadata is validated by policy.
+4. Agent reacts to `action_request.decided` event.
+
+## Example
+
+```ts
+const actionRequest = orchard.createActionRequest({
+  threadId,
+  requestedBy: { type: "agent", id: "agent-ops" },
+  actionType: "rotate_api_keys",
+  payload: { environment: "prod" },
+  approvalPolicy: {
+    ownerOnly: true,
+    verification: {
+      required: true,
+      maxAgeMs: 300_000,
+      allowedMethods: ["webauthn", "magic_link"],
+    },
+  },
+});
+
+orchard.decideActionRequest({
+  actionRequestId: actionRequest.id,
+  decidedBy: { type: "human", id: "owner-1" },
+  decision: "approved",
+  verification: {
+    method: "webauthn",
+    verifiedAt: new Date(),
+    verifierId: "identity-gateway",
+  },
+});
+```
+
+## Pending request queries
+
+Use `listPendingActionRequests()` to fetch unresolved items globally or by thread.

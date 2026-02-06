@@ -1,0 +1,28 @@
+{
+  "$schema": "https://mintlify.com/schema.json",
+  "name": "OrchardSDK",
+  "theme": "willow",
+  "colors": {
+    "primary": "#1F6FEB",
+    "light": "#1F6FEB",
+    "dark": "#5AA0FF"
+  },
+  "navigation": [
+    {
+      "group": "Getting Started",
+      "pages": ["overview", "installation"]
+    },
+    {
+      "group": "SDK",
+      "pages": [
+        "api-reference",
+        "guides/thread-lifecycle",
+        "guides/approval-workflow"
+      ]
+    },
+    {
+      "group": "Extensions",
+      "pages": ["extensions/overview", "extensions/email-integrations"]
+    }
+  ]
+}

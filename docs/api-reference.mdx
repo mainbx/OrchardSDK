@@ -1,0 +1,49 @@
+---
+title: API Reference
+description: Public OrchardSDK interfaces and operations.
+---
+
+## Primary interface
+
+`Orchard` is the core SDK contract.
+
+### Lifecycle methods
+
+- `createThread(input)`
+- `closeThread(input)`
+- `listThreads(filter?)`
+
+### Messaging methods
+
+- `postMessage(input)`
+- `getMessages(threadId)`
+
+### Action request methods
+
+- `createActionRequest(input)`
+- `decideActionRequest(input)`
+- `getActionRequest(actionRequestId)`
+- `listActionRequests(filter?)`
+- `listPendingActionRequests(filter?)`
+- `getApprovals(actionRequestId)`
+
+### Audit and events
+
+- `getAuditEvents(filter?)`
+- `subscribe(listener, filter?)`
+
+## Key models
+
+- `Thread`: includes `createdAt` and optional `closedAt`.
+- `Message`: immutable posted messages with sender metadata.
+- `ActionRequest`: structured proposed action with pending/approved/denied status.
+- `Approval`: human decision plus optional verification metadata.
+- `AuditEvent`: append-only timeline (`thread.created`, `thread.closed`, `message.posted`, `action_request.created`, `action_request.decided`).
+
+## Errors
+
+- `ValidationError`
+- `NotFoundError`
+- `ConflictError`
+- `PolicyViolationError`
+- `IdempotencyConflictError`

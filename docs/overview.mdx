@@ -1,0 +1,30 @@
+---
+title: Overview
+description: Transport-agnostic trusted communication SDK for AI agents and humans.
+---
+
+## OrchardSDK
+
+OrchardSDK standardizes trusted communication workflows between agents and humans with explicit approval controls and immutable audit trails.
+
+### Core capabilities
+
+- Threaded communication between agents and humans.
+- Structured action requests that require explicit approval.
+- Owner verification metadata support and policy enforcement.
+- Append-only audit events and event subscriptions.
+- Idempotency controls for create/post/decision/close operations.
+
+### Design principles
+
+- Transport agnostic: no HTTP/WebSocket assumptions.
+- Deterministic and testable behavior.
+- Security-minded defaults: no automatic external execution.
+- Clear separation between orchestration logic and provider integrations.
+
+### What is out of scope
+
+- UI rendering.
+- Email sync/send implementation by default.
+- OAuth provider implementations in core SDK.
+- Hosting and persistence assumptions.

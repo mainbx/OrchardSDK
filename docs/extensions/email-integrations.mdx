@@ -1,0 +1,57 @@
+---
+title: Email Integrations
+description: Gmail, Outlook, ProtonMail, and Yahoo Mail service stubs.
+---
+
+## What exists today
+
+Provider stub classes are available in `integrations/email`:
+
+- `GmailService`
+- `OutlookService`
+- `ProtonMailService`
+- `YahooMailService`
+
+Each class currently provides:
+
+- `sendMessage(to, subject, body, attachments?)`
+- `listThreads()`
+- `listMessages(threadId)`
+
+These are intentionally placeholders and do not perform real provider API calls.
+
+## Configuration expectations
+
+### Gmail
+
+- Google OAuth app credentials.
+- Gmail API scopes and token lifecycle handling.
+
+### Outlook
+
+- Microsoft Entra ID application credentials.
+- Microsoft Graph Mail scopes and refresh token handling.
+
+### ProtonMail
+
+- Proton Mail Bridge connection details and credentials.
+- IMAP/SMTP client wiring.
+
+### Yahoo Mail
+
+- Yahoo OAuth app credentials or IMAP/SMTP credentials.
+- Provider-specific mailbox/thread mapping logic.
+
+## Limitations
+
+- No OAuth authorization flow.
+- No API SDK calls.
+- No IMAP/SMTP transport implementation.
+- No inbox syncing, webhooks, or retries.
+
+## Next implementation steps
+
+1. Add provider auth/token managers.
+2. Add typed provider clients with retry/rate-limit handling.
+3. Map provider threads/messages into Orchard domain models.
+4. Add end-to-end integration tests with mocked transports.
