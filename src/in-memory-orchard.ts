@@ -19,6 +19,7 @@ import {
   type MessagePostedEvent,
   type Orchard,
   type OrchardEventListener,
+  type ParticipantType,
   type PendingActionRequestFilter,
   type PostMessageInput,
   type SubscriptionFilter,
@@ -52,7 +53,13 @@ interface ResolvedApprovalPolicy {
   readonly verification: VerificationPolicy;
 }
 
-const clone = <T>(value: T): T => structuredClone(value);
+const clone = <T>(value: T, fieldName = "value"): T => {
+  try {
+    return structuredClone(value);
+  } catch {
+    throw new ValidationError(`'${fieldName}' contains unsupported data for cloning.`);
+  }
+};
 
 class SystemClock implements Clock {
   now(): Date {
@@ -93,7 +100,9 @@ export class InMemoryOrchard implements Orchard {
   }
 
   createThread(input: CreateThreadInput): Thread {
-    assertNonEmpty(input.ownerId, "ownerId");
+    assertNonEmptyString(input.ownerId, "ownerId");
+    assertOptionalNonEmptyString(input.title, "title");
+    assertOptionalNonEmptyString(input.idempotencyKey, "idempotencyKey");
 
     const fingerprint = stableStringify({
       ownerId: input.ownerId,
@@ -116,7 +125,7 @@ export class InMemoryOrchard implements Orchard {
       ownerId: input.ownerId,
       createdAt: this.clock.now(),
       ...(input.title ? { title: input.title } : {}),
-      ...(input.metadata ? { metadata: clone(input.metadata) } : {}),
+      ...(input.metadata ? { metadata: clone(input.metadata, "metadata") } : {}),
     };
 
     this.threads.set(thread.id, thread);
@@ -139,9 +148,10 @@ export class InMemoryOrchard implements Orchard {
   }
 
   postMessage(input: PostMessageInput): Message {
-    assertNonEmpty(input.threadId, "threadId");
-    assertNonEmpty(input.sender.id, "sender.id");
-    assertNonEmpty(input.body, "body");
+    assertNonEmptyString(input.threadId, "threadId");
+    assertParticipantRef(input.sender, "sender", ["agent", "human"]);
+    assertNonEmptyString(input.body, "body");
+    assertOptionalNonEmptyString(input.idempotencyKey, "idempotencyKey");
 
     const thread = this.threads.get(input.threadId);
     if (!thread) {
@@ -169,10 +179,10 @@ export class InMemoryOrchard implements Orchard {
     const message: Message = {
       id: this.ids.next("msg"),
       threadId: input.threadId,
-      sender: clone(input.sender),
+      sender: clone(input.sender, "sender"),
       body: input.body,
       createdAt: this.clock.now(),
-      ...(input.metadata ? { metadata: clone(input.metadata) } : {}),
+      ...(input.metadata ? { metadata: clone(input.metadata, "metadata") } : {}),
       ...(input.idempotencyKey ? { idempotencyKey: input.idempotencyKey } : {}),
     };
 
@@ -206,13 +216,11 @@ export class InMemoryOrchard implements Orchard {
   createActionRequest<TPayload = unknown>(
     input: CreateActionRequestInput<TPayload>,
   ): ActionRequest<TPayload> {
-    assertNonEmpty(input.threadId, "threadId");
-    assertNonEmpty(input.requestedBy.id, "requestedBy.id");
-    assertNonEmpty(input.actionType, "actionType");
-
-    if (input.requestedBy.type !== "agent") {
-      throw new ValidationError("Action requests must be created by an agent participant.");
-    }
+    assertNonEmptyString(input.threadId, "threadId");
+    assertParticipantRef(input.requestedBy, "requestedBy", ["agent"]);
+    assertNonEmptyString(input.actionType, "actionType");
+    assertOptionalNonEmptyString(input.reason, "reason");
+    assertOptionalNonEmptyString(input.idempotencyKey, "idempotencyKey");
 
     const thread = this.threads.get(input.threadId);
     if (!thread) {
@@ -246,14 +254,14 @@ export class InMemoryOrchard implements Orchard {
     const actionRequest: ActionRequest<TPayload> = {
       id: this.ids.next("act"),
       threadId: input.threadId,
-      requestedBy: clone(input.requestedBy),
+      requestedBy: clone(input.requestedBy, "requestedBy"),
       actionType: input.actionType,
-      payload: clone(input.payload),
+      payload: clone(input.payload, "payload"),
       status: "pending",
       createdAt: this.clock.now(),
       ...(input.reason ? { reason: input.reason } : {}),
-      ...(input.metadata ? { metadata: clone(input.metadata) } : {}),
-      ...(input.approvalPolicy ? { approvalPolicy: clone(input.approvalPolicy) } : {}),
+      ...(input.metadata ? { metadata: clone(input.metadata, "metadata") } : {}),
+      ...(input.approvalPolicy ? { approvalPolicy: clone(input.approvalPolicy, "approvalPolicy") } : {}),
     };
 
     this.actionRequests.set(actionRequest.id, actionRequest);
@@ -281,11 +289,13 @@ export class InMemoryOrchard implements Orchard {
   }
 
   decideActionRequest(input: DecideActionRequestInput): Approval {
-    assertNonEmpty(input.actionRequestId, "actionRequestId");
-    assertNonEmpty(input.decidedBy.id, "decidedBy.id");
-
-    if (input.decidedBy.type !== "human") {
-      throw new ValidationError("Action request decisions must be made by a human participant.");
+    assertNonEmptyString(input.actionRequestId, "actionRequestId");
+    assertParticipantRef(input.decidedBy, "decidedBy", ["human"]);
+    assertApprovalDecision(input.decision, "decision");
+    assertOptionalNonEmptyString(input.reason, "reason");
+    assertOptionalNonEmptyString(input.idempotencyKey, "idempotencyKey");
+    if (input.verification) {
+      validateVerificationMetadata(input.verification);
     }
 
     const actionRequest = this.actionRequests.get(input.actionRequestId);
@@ -341,10 +351,10 @@ export class InMemoryOrchard implements Orchard {
       actionRequestId: actionRequest.id,
       threadId: actionRequest.threadId,
       decision: input.decision,
-      decidedBy: clone(input.decidedBy),
+      decidedBy: clone(input.decidedBy, "decidedBy"),
       decidedAt,
       ...(input.reason ? { reason: input.reason } : {}),
-      ...(input.verification ? { verification: clone(input.verification) } : {}),
+      ...(input.verification ? { verification: clone(input.verification, "verification") } : {}),
       ...(input.idempotencyKey ? { idempotencyKey: input.idempotencyKey } : {}),
     };
 
@@ -385,16 +395,14 @@ export class InMemoryOrchard implements Orchard {
   }
 
   closeThread(input: CloseThreadInput): Thread {
-    assertNonEmpty(input.threadId, "threadId");
-    assertNonEmpty(input.closedBy.id, "closedBy.id");
+    assertNonEmptyString(input.threadId, "threadId");
+    assertParticipantRef(input.closedBy, "closedBy", ["human"]);
+    assertOptionalNonEmptyString(input.reason, "reason");
+    assertOptionalNonEmptyString(input.idempotencyKey, "idempotencyKey");
 
     const thread = this.threads.get(input.threadId);
     if (!thread) {
       throw new NotFoundError(`Thread '${input.threadId}' was not found.`);
-    }
-
-    if (input.closedBy.type !== "human") {
-      throw new ValidationError("Threads can only be closed by a human participant.");
     }
 
     if (thread.ownerId !== input.closedBy.id) {
@@ -444,10 +452,10 @@ export class InMemoryOrchard implements Orchard {
       threadId: closedThread.id,
       occurredAt: this.clock.now(),
       payload: {
-        thread: clone(closedThread),
-        closedBy: clone(input.closedBy),
+        thread: clone(closedThread, "thread"),
+        closedBy: clone(input.closedBy, "closedBy"),
         ...(input.reason ? { reason: input.reason } : {}),
-        ...(input.metadata ? { metadata: clone(input.metadata) } : {}),
+        ...(input.metadata ? { metadata: clone(input.metadata, "metadata") } : {}),
       },
     };
     this.appendAuditEvent(event);
@@ -456,6 +464,11 @@ export class InMemoryOrchard implements Orchard {
   }
 
   listThreads(filter: ThreadListFilter = {}): Thread[] {
+    assertOptionalNonEmptyString(filter.ownerId, "ownerId");
+    if (filter.includeClosed !== undefined && typeof filter.includeClosed !== "boolean") {
+      throw new ValidationError("'includeClosed' must be a boolean.");
+    }
+
     const includeClosed = filter.includeClosed ?? true;
     const threads = [...this.threads.values()].filter((thread) => {
       if (filter.ownerId && thread.ownerId !== filter.ownerId) {
@@ -471,11 +484,13 @@ export class InMemoryOrchard implements Orchard {
   }
 
   getThread(threadId: string): Thread | undefined {
+    assertNonEmptyString(threadId, "threadId");
     const thread = this.threads.get(threadId);
     return thread ? clone(thread) : undefined;
   }
 
   getMessages(threadId: string): Message[] {
+    assertNonEmptyString(threadId, "threadId");
     const messages = this.messagesByThread.get(threadId);
     if (!messages) {
       return [];
@@ -484,6 +499,18 @@ export class InMemoryOrchard implements Orchard {
   }
 
   listActionRequests(filter: ActionRequestListFilter = {}): ActionRequest[] {
+    assertOptionalNonEmptyString(filter.threadId, "threadId");
+    assertOptionalNonEmptyString(filter.actionType, "actionType");
+    assertOptionalNonEmptyString(filter.requestedById, "requestedById");
+    if (
+      filter.status !== undefined &&
+      filter.status !== "pending" &&
+      filter.status !== "approved" &&
+      filter.status !== "denied"
+    ) {
+      throw new ValidationError("'status' must be one of: pending, approved, denied.");
+    }
+
     const actionRequests = [...this.actionRequests.values()].filter((actionRequest) => {
       if (filter.threadId && actionRequest.threadId !== filter.threadId) {
         return false;
@@ -504,6 +531,9 @@ export class InMemoryOrchard implements Orchard {
   }
 
   listPendingActionRequests(filter: PendingActionRequestFilter = {}): ActionRequest[] {
+    assertOptionalNonEmptyString(filter.threadId, "threadId");
+    assertOptionalNonEmptyString(filter.requestedById, "requestedById");
+
     return this.listActionRequests({
       status: "pending",
       ...(filter.threadId ? { threadId: filter.threadId } : {}),
@@ -512,11 +542,13 @@ export class InMemoryOrchard implements Orchard {
   }
 
   getActionRequest(actionRequestId: string): ActionRequest | undefined {
+    assertNonEmptyString(actionRequestId, "actionRequestId");
     const actionRequest = this.actionRequests.get(actionRequestId);
     return actionRequest ? clone(actionRequest) : undefined;
   }
 
   getApprovals(actionRequestId: string): Approval[] {
+    assertNonEmptyString(actionRequestId, "actionRequestId");
     const approvals = this.approvalsByActionRequest.get(actionRequestId);
     if (!approvals) {
       return [];
@@ -525,6 +557,8 @@ export class InMemoryOrchard implements Orchard {
   }
 
   getAuditEvents(filter: AuditEventFilter = {}): AuditEvent[] {
+    assertOptionalNonEmptyString(filter.threadId, "threadId");
+    assertOptionalAuditEventTypes(filter.types, "types");
     const typeSet = filter.types ? new Set(filter.types) : undefined;
     const events = this.auditEvents.filter((event) => {
       if (filter.threadId && event.threadId !== filter.threadId) {
@@ -539,6 +573,14 @@ export class InMemoryOrchard implements Orchard {
   }
 
   subscribe(listener: OrchardEventListener, filter?: SubscriptionFilter): Unsubscribe {
+    if (typeof listener !== "function") {
+      throw new ValidationError("'listener' must be a function.");
+    }
+    if (filter?.threadId !== undefined) {
+      assertNonEmptyString(filter.threadId, "threadId");
+    }
+    assertOptionalAuditEventTypes(filter?.types, "types");
+
     const id = ++this.subscriberSequence;
     const subscription = filter ? { listener, filter: clone(filter) } : { listener };
     this.subscribers.set(id, subscription);
@@ -580,7 +622,7 @@ export class InMemoryOrchard implements Orchard {
       return undefined;
     }
 
-    const record = this.idempotency.get(`${scope}:${key}`);
+    const record = this.idempotency.get(idempotencyStorageKey(scope, key));
     if (!record) {
       return undefined;
     }
@@ -611,7 +653,7 @@ export class InMemoryOrchard implements Orchard {
       return;
     }
 
-    this.idempotency.set(`${scope}:${key}`, {
+    this.idempotency.set(idempotencyStorageKey(scope, key), {
       fingerprint,
       resultId,
     });
@@ -621,9 +663,62 @@ export class InMemoryOrchard implements Orchard {
 export const createInMemoryOrchard = (options: InMemoryOrchardOptions = {}): Orchard =>
   new InMemoryOrchard(options);
 
-const assertNonEmpty = (value: string, fieldName: string): void => {
-  if (!value.trim()) {
+const assertNonEmptyString = (value: unknown, fieldName: string): void => {
+  if (typeof value !== "string" || !value.trim()) {
     throw new ValidationError(`'${fieldName}' must be a non-empty string.`);
+  }
+};
+
+const assertOptionalNonEmptyString = (value: unknown, fieldName: string): void => {
+  if (value === undefined) {
+    return;
+  }
+  assertNonEmptyString(value, fieldName);
+};
+
+const assertParticipantRef = (
+  value: unknown,
+  fieldName: string,
+  allowedTypes: readonly ParticipantType[],
+): void => {
+  if (!isRecord(value)) {
+    throw new ValidationError(`'${fieldName}' must be a participant object.`);
+  }
+
+  assertNonEmptyString(value.id, `${fieldName}.id`);
+  assertNonEmptyString(value.type, `${fieldName}.type`);
+
+  const participantType = value.type as string;
+  if (!allowedTypes.includes(participantType as ParticipantType)) {
+    throw new ValidationError(
+      `'${fieldName}.type' must be one of: ${allowedTypes.map((type) => `'${type}'`).join(", ")}.`,
+    );
+  }
+
+  if (value.displayName !== undefined) {
+    assertNonEmptyString(value.displayName, `${fieldName}.displayName`);
+  }
+};
+
+const assertApprovalDecision = (value: unknown, fieldName: string): void => {
+  if (value !== "approved" && value !== "denied") {
+    throw new ValidationError(`'${fieldName}' must be either 'approved' or 'denied'.`);
+  }
+};
+
+const assertOptionalAuditEventTypes = (value: unknown, fieldName: string): void => {
+  if (value === undefined) {
+    return;
+  }
+  if (!Array.isArray(value)) {
+    throw new ValidationError(`'${fieldName}' must be an array of audit event type strings.`);
+  }
+
+  for (const entry of value) {
+    assertNonEmptyString(entry, `${fieldName}[]`);
+    if (!AUDIT_EVENT_TYPES.has(entry)) {
+      throw new ValidationError(`Unsupported audit event type '${entry}'.`);
+    }
   }
 };
 
@@ -632,6 +727,17 @@ const ensureThreadIsOpen = (thread: Thread): void => {
     throw new ConflictError(`Thread '${thread.id}' is closed and cannot accept new requests.`);
   }
 };
+
+const idempotencyStorageKey = (scope: string, key: string): string =>
+  JSON.stringify([scope, key]);
+
+const AUDIT_EVENT_TYPES = new Set([
+  "thread.created",
+  "thread.closed",
+  "message.posted",
+  "action_request.created",
+  "action_request.decided",
+]);
 
 const resolveApprovalPolicy = (policy: ActionApprovalPolicy | undefined): ResolvedApprovalPolicy => {
   const verification = policy?.verification;
@@ -661,6 +767,9 @@ const validateApprovalPolicy = (policy: ActionApprovalPolicy | undefined): void 
   if (verification.maxAgeMs !== undefined && verification.maxAgeMs < 0) {
     throw new ValidationError("approvalPolicy.verification.maxAgeMs must be >= 0.");
   }
+  if (verification.maxAgeMs !== undefined && !Number.isFinite(verification.maxAgeMs)) {
+    throw new ValidationError("approvalPolicy.verification.maxAgeMs must be a finite number.");
+  }
 
   if (verification.allowedMethods) {
     if (verification.allowedMethods.length === 0) {
@@ -670,7 +779,7 @@ const validateApprovalPolicy = (policy: ActionApprovalPolicy | undefined): void 
     }
 
     for (const method of verification.allowedMethods) {
-      assertNonEmpty(method, "approvalPolicy.verification.allowedMethods[]");
+      assertNonEmptyString(method, "approvalPolicy.verification.allowedMethods[]");
     }
   }
 };
@@ -690,8 +799,7 @@ const ensureApprovalVerificationSatisfiesPolicy = (
     );
   }
 
-  assertNonEmpty(verification.method, "verification.method");
-  assertNonEmpty(verification.verifierId, "verification.verifierId");
+  validateVerificationMetadata(verification);
 
   if (policy.allowedMethods && !policy.allowedMethods.includes(verification.method)) {
     throw new PolicyViolationError(
@@ -713,30 +821,136 @@ const ensureApprovalVerificationSatisfiesPolicy = (
   }
 };
 
+const validateVerificationMetadata = (
+  verification: NonNullable<DecideActionRequestInput["verification"]>,
+): void => {
+  assertNonEmptyString(verification.method, "verification.method");
+  assertNonEmptyString(verification.verifierId, "verification.verifierId");
+  if (!(verification.verifiedAt instanceof Date) || Number.isNaN(verification.verifiedAt.getTime())) {
+    throw new ValidationError("'verification.verifiedAt' must be a valid Date.");
+  }
+};
+
 const stableStringify = (value: unknown): string => {
+  return stableStringifyInternal(value, new WeakSet<object>());
+};
+
+const stableStringifyInternal = (value: unknown, seen: WeakSet<object>): string => {
   if (value === null || value === undefined) {
     return "null";
   }
 
+  if (typeof value === "bigint") {
+    return `{\"$bigint\":${JSON.stringify(value.toString())}}`;
+  }
+
+  if (typeof value === "number" && Number.isNaN(value)) {
+    return "{\"$number\":\"NaN\"}";
+  }
+
+  if (typeof value === "number" && !Number.isFinite(value)) {
+    return `{\"$number\":${JSON.stringify(value.toString())}}`;
+  }
+
+  if (typeof value === "function" || typeof value === "symbol") {
+    throw new ValidationError("Unsupported value type for idempotency fingerprinting.");
+  }
+
   if (value instanceof Date) {
-    return JSON.stringify(value.toISOString());
+    if (Number.isNaN(value.getTime())) {
+      throw new ValidationError("Invalid Date value provided.");
+    }
+    return `{\"$date\":${JSON.stringify(value.toISOString())}}`;
   }
 
   if (Array.isArray(value)) {
-    return `[${value.map((item) => stableStringify(item)).join(",")}]`;
+    return `[${value.map((item) => stableStringifyInternal(item, seen)).join(",")}]`;
+  }
+
+  if (value instanceof Map) {
+    if (seen.has(value)) {
+      throw new ValidationError("Circular references are not supported in idempotent payloads.");
+    }
+    seen.add(value);
+    try {
+      const entries: Array<[string, string]> = [...value.entries()]
+        .map(([entryKey, entryValue]) => [
+          stableStringifyInternal(entryKey, seen),
+          stableStringifyInternal(entryValue, seen),
+        ] as [string, string])
+        .sort(([leftKey, leftValue], [rightKey, rightValue]) =>
+          leftKey === rightKey
+            ? compareStrings(leftValue, rightValue)
+            : compareStrings(leftKey, rightKey),
+        );
+
+      const serializedEntries = entries.map(
+        ([entryKey, entryValue]) => `[${entryKey},${entryValue}]`,
+      );
+      return `{\"$map\":[${serializedEntries.join(",")}]}`;
+    } finally {
+      seen.delete(value);
+    }
+  }
+
+  if (value instanceof Set) {
+    if (seen.has(value)) {
+      throw new ValidationError("Circular references are not supported in idempotent payloads.");
+    }
+    seen.add(value);
+    try {
+      const entries = [...value.values()]
+        .map((entryValue) => stableStringifyInternal(entryValue, seen))
+        .sort((left, right) => compareStrings(left, right));
+      return `{\"$set\":[${entries.join(",")}]}`;
+    } finally {
+      seen.delete(value);
+    }
+  }
+
+  if (ArrayBuffer.isView(value)) {
+    const buffer = Buffer.from(value.buffer, value.byteOffset, value.byteLength).toString("base64");
+    return `{\"$typedArray\":\"${value.constructor.name}\",\"data\":${JSON.stringify(buffer)}}`;
+  }
+
+  if (value instanceof ArrayBuffer) {
+    const buffer = Buffer.from(value).toString("base64");
+    return `{\"$arrayBuffer\":${JSON.stringify(buffer)}}`;
   }
 
   if (typeof value === "object") {
-    const entries = Object.entries(value as Record<string, unknown>)
-      .filter(([, entryValue]) => entryValue !== undefined)
-      .sort(([left], [right]) => left.localeCompare(right));
+    if (seen.has(value)) {
+      throw new ValidationError("Circular references are not supported in idempotent payloads.");
+    }
+    seen.add(value);
+    try {
+      const entries = Object.entries(value as Record<string, unknown>)
+        .filter(([, entryValue]) => entryValue !== undefined)
+        .sort(([left], [right]) => compareStrings(left, right));
 
-    const serialized = entries.map(
-      ([entryKey, entryValue]) => `${JSON.stringify(entryKey)}:${stableStringify(entryValue)}`,
-    );
+      const serialized = entries.map(
+        ([entryKey, entryValue]) =>
+          `${JSON.stringify(entryKey)}:${stableStringifyInternal(entryValue, seen)}`,
+      );
 
-    return `{${serialized.join(",")}}`;
+      return `{${serialized.join(",")}}`;
+    } finally {
+      seen.delete(value);
+    }
   }
 
   return JSON.stringify(value);
+};
+
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === "object" && value !== null;
+
+const compareStrings = (left: string, right: string): number => {
+  if (left < right) {
+    return -1;
+  }
+  if (left > right) {
+    return 1;
+  }
+  return 0;
 };
