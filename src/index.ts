@@ -1,4 +1,5 @@
 export type {
+  ActionRequestListFilter,
   ActionApprovalPolicy,
   ActionRequest,
   ActionRequestStatus,
@@ -8,6 +9,7 @@ export type {
   AuditEventFilter,
   AuditEventType,
   Clock,
+  CloseThreadInput,
   CreateActionRequestInput,
   CreateThreadInput,
   DecideActionRequestInput,
@@ -16,11 +18,14 @@ export type {
   Orchard,
   OrchardEventListener,
   OwnerVerificationMetadata,
+  PendingActionRequestFilter,
   ParticipantRef,
   ParticipantType,
   PostMessageInput,
   SubscriptionFilter,
   Thread,
+  ThreadClosedEvent,
+  ThreadListFilter,
   Unsubscribe,
   VerificationPolicy,
 } from "./types.js";
