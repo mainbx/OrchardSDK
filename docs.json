@@ -16,6 +16,7 @@
       "group": "SDK",
       "pages": [
         "api-reference",
+        "security-review",
         "guides/thread-lifecycle",
         "guides/approval-workflow"
       ]
