@@ -46,8 +46,9 @@ Main operations:
 5. `closeThread`
 6. `listThreads`
 7. `listActionRequests` / `listPendingActionRequests`
-8. `subscribe`
-9. `getAuditEvents`
+8. `getThread` / `getMessages` / `getActionRequest` / `getApprovals`
+9. `subscribe`
+10. `getAuditEvents`
 
 ## Example flow
 
@@ -110,3 +111,7 @@ For approvals (`decision = "approved"`), policy checks are enforced before the d
 - Public methods perform runtime validation so JavaScript callers cannot bypass TypeScript type contracts.
 - Inputs used in idempotency fingerprints must be deterministic and non-circular.
 - Secrets and provider credentials must be injected at runtime and never committed to source control.
+- The in-memory implementation supports optional safety limits via `InMemoryOrchardOptions`:
+  - `idempotencyTtlMs`
+  - `maxSubscribers`
+  - `maxAuditEvents`

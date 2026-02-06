@@ -41,11 +41,15 @@ import {
 export interface InMemoryOrchardOptions {
   readonly clock?: Clock;
   readonly idGenerator?: IdGenerator;
+  readonly idempotencyTtlMs?: number;
+  readonly maxSubscribers?: number;
+  readonly maxAuditEvents?: number;
 }
 
 interface IdempotencyRecord {
   readonly fingerprint: string;
   readonly resultId: string;
+  readonly createdAtMs: number;
 }
 
 interface ResolvedApprovalPolicy {
@@ -76,6 +80,9 @@ class RandomIdGenerator implements IdGenerator {
 export class InMemoryOrchard implements Orchard {
   private readonly clock: Clock;
   private readonly ids: IdGenerator;
+  private readonly idempotencyTtlMs: number | undefined;
+  private readonly maxSubscribers: number | undefined;
+  private readonly maxAuditEvents: number | undefined;
 
   private readonly threads = new Map<string, Thread>();
   private readonly messagesByThread = new Map<string, Message[]>();
@@ -97,6 +104,13 @@ export class InMemoryOrchard implements Orchard {
   constructor(options: InMemoryOrchardOptions = {}) {
     this.clock = options.clock ?? new SystemClock();
     this.ids = options.idGenerator ?? new RandomIdGenerator();
+    this.idempotencyTtlMs = options.idempotencyTtlMs;
+    this.maxSubscribers = options.maxSubscribers;
+    this.maxAuditEvents = options.maxAuditEvents;
+
+    assertOptionalPositiveNumber(options.idempotencyTtlMs, "idempotencyTtlMs");
+    assertOptionalPositiveInteger(options.maxSubscribers, "maxSubscribers");
+    assertOptionalPositiveInteger(options.maxAuditEvents, "maxAuditEvents");
   }
 
   createThread(input: CreateThreadInput): Thread {
@@ -580,6 +594,9 @@ export class InMemoryOrchard implements Orchard {
       assertNonEmptyString(filter.threadId, "threadId");
     }
     assertOptionalAuditEventTypes(filter?.types, "types");
+    if (this.maxSubscribers !== undefined && this.subscribers.size >= this.maxSubscribers) {
+      throw new ConflictError(`Subscriber limit reached (${this.maxSubscribers}).`);
+    }
 
     const id = ++this.subscriberSequence;
     const subscription = filter ? { listener, filter: clone(filter) } : { listener };
@@ -592,11 +609,15 @@ export class InMemoryOrchard implements Orchard {
 
   private appendAuditEvent(event: AuditEvent): void {
     this.auditEvents.push(event);
+    if (this.maxAuditEvents !== undefined && this.auditEvents.length > this.maxAuditEvents) {
+      this.auditEvents.splice(0, this.auditEvents.length - this.maxAuditEvents);
+    }
     this.publishEvent(event);
   }
 
   private publishEvent(event: AuditEvent): void {
-    for (const { listener, filter } of this.subscribers.values()) {
+    const subscribers = [...this.subscribers.values()];
+    for (const { listener, filter } of subscribers) {
       if (filter?.threadId && filter.threadId !== event.threadId) {
         continue;
       }
@@ -621,6 +642,7 @@ export class InMemoryOrchard implements Orchard {
     if (!key) {
       return undefined;
     }
+    this.cleanupExpiredIdempotency(Date.now());
 
     const record = this.idempotency.get(idempotencyStorageKey(scope, key));
     if (!record) {
@@ -652,11 +674,25 @@ export class InMemoryOrchard implements Orchard {
     if (!key) {
       return;
     }
+    const nowMs = Date.now();
+    this.cleanupExpiredIdempotency(nowMs);
 
     this.idempotency.set(idempotencyStorageKey(scope, key), {
       fingerprint,
       resultId,
+      createdAtMs: nowMs,
     });
+  }
+
+  private cleanupExpiredIdempotency(nowMs: number): void {
+    if (this.idempotencyTtlMs === undefined) {
+      return;
+    }
+    for (const [storageKey, record] of this.idempotency.entries()) {
+      if (nowMs - record.createdAtMs > this.idempotencyTtlMs) {
+        this.idempotency.delete(storageKey);
+      }
+    }
   }
 }
 
@@ -719,6 +755,29 @@ const assertOptionalAuditEventTypes = (value: unknown, fieldName: string): void 
     if (!AUDIT_EVENT_TYPES.has(entry)) {
       throw new ValidationError(`Unsupported audit event type '${entry}'.`);
     }
+  }
+};
+
+const assertOptionalPositiveNumber = (value: unknown, fieldName: string): void => {
+  if (value === undefined) {
+    return;
+  }
+  if (typeof value !== "number" || !Number.isFinite(value) || value <= 0) {
+    throw new ValidationError(`'${fieldName}' must be a positive finite number.`);
+  }
+};
+
+const assertOptionalPositiveInteger = (value: unknown, fieldName: string): void => {
+  if (value === undefined) {
+    return;
+  }
+  if (
+    typeof value !== "number" ||
+    !Number.isFinite(value) ||
+    value <= 0 ||
+    !Number.isInteger(value)
+  ) {
+    throw new ValidationError(`'${fieldName}' must be a positive integer.`);
   }
 };
 
@@ -836,7 +895,11 @@ const stableStringify = (value: unknown): string => {
 };
 
 const stableStringifyInternal = (value: unknown, seen: WeakSet<object>): string => {
-  if (value === null || value === undefined) {
+  if (value === undefined) {
+    return "{\"$undefined\":true}";
+  }
+
+  if (value === null) {
     return "null";
   }
 

@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import {
   ConflictError,
@@ -8,6 +8,7 @@ import {
   ValidationError,
   type Clock,
   type IdGenerator,
+  type InMemoryOrchardOptions,
 } from "../src/index.js";
 
 class FakeClock implements Clock {
@@ -35,10 +36,11 @@ class SequentialIdGenerator implements IdGenerator {
   }
 }
 
-const createSdk = () =>
+const createSdk = (options: Partial<InMemoryOrchardOptions> = {}) =>
   new InMemoryOrchard({
     clock: new FakeClock("2026-01-01T00:00:00.000Z"),
     idGenerator: new SequentialIdGenerator(),
+    ...options,
   });
 
 describe("InMemoryOrchard", () => {
@@ -473,5 +475,107 @@ describe("InMemoryOrchard", () => {
         },
       }),
     ).toThrow(ValidationError);
+  });
+
+  it("returns safe defaults for unknown getter ids", () => {
+    const orchard = createSdk();
+
+    expect(orchard.getThread("missing-thread")).toBeUndefined();
+    expect(orchard.getMessages("missing-thread")).toEqual([]);
+    expect(orchard.getActionRequest("missing-action")).toBeUndefined();
+    expect(orchard.getApprovals("missing-action")).toEqual([]);
+  });
+
+  it("supports maxAgeMs = 0 for immediately-verified approvals", () => {
+    const orchard = createSdk({ clock: new FakeClock("2026-01-01T00:00:00.000Z", 0) });
+    const thread = orchard.createThread({ ownerId: "owner-1" });
+
+    const action = orchard.createActionRequest({
+      threadId: thread.id,
+      requestedBy: {
+        type: "agent",
+        id: "agent-alpha",
+      },
+      actionType: "critical_change",
+      payload: {},
+      approvalPolicy: {
+        verification: {
+          required: true,
+          maxAgeMs: 0,
+        },
+      },
+    });
+
+    const approval = orchard.decideActionRequest({
+      actionRequestId: action.id,
+      decidedBy: {
+        type: "human",
+        id: "owner-1",
+      },
+      decision: "approved",
+      verification: {
+        method: "webauthn",
+        verifiedAt: new Date("2026-01-01T00:00:00.000Z"),
+        verifierId: "auth-service-1",
+      },
+    });
+
+    expect(approval.decision).toBe("approved");
+  });
+
+  it("distinguishes undefined from null in idempotency fingerprints", () => {
+    const orchard = createSdk();
+    const thread = orchard.createThread({ ownerId: "owner-1" });
+
+    orchard.createActionRequest({
+      threadId: thread.id,
+      requestedBy: { type: "agent", id: "agent-alpha" },
+      actionType: "normalize",
+      payload: [undefined],
+      idempotencyKey: "undefined-vs-null",
+    });
+
+    expect(() =>
+      orchard.createActionRequest({
+        threadId: thread.id,
+        requestedBy: { type: "agent", id: "agent-alpha" },
+        actionType: "normalize",
+        payload: [null],
+        idempotencyKey: "undefined-vs-null",
+      }),
+    ).toThrow(IdempotencyConflictError);
+  });
+
+  it("enforces maxSubscribers option", () => {
+    const orchard = createSdk({ maxSubscribers: 1 });
+    orchard.subscribe(() => {});
+
+    expect(() => orchard.subscribe(() => {})).toThrow(ConflictError);
+  });
+
+  it("expires idempotency entries when ttl is configured", () => {
+    vi.useFakeTimers();
+    try {
+      vi.setSystemTime(new Date("2026-01-01T00:00:00.000Z"));
+
+      const orchard = createSdk({ idempotencyTtlMs: 1_000 });
+
+      const first = orchard.createThread({
+        ownerId: "owner-1",
+        idempotencyKey: "thread-key",
+      });
+
+      vi.setSystemTime(new Date("2026-01-01T00:00:02.000Z"));
+
+      const second = orchard.createThread({
+        ownerId: "owner-1",
+        idempotencyKey: "thread-key",
+      });
+
+      expect(second.id).not.toBe(first.id);
+      expect(orchard.listThreads()).toHaveLength(2);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
