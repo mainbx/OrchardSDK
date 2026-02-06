@@ -356,3 +356,22 @@ OrchardSDK is a well-crafted Phase 1 implementation of a human-in-the-loop appro
 The main technical risks are the synchronous API (which will require a breaking change for real backends), the lack of pagination, and the unbounded growth of internal data structures. The email integration stubs are premature and add complexity without value at this stage.
 
 For the project to gain traction, the most impactful next steps are: making the interface async, building one real persistence backend, and demonstrating integration with an actual agent framework.
+
+---
+
+## Codex Addendum (2026-02-06)
+
+This addendum clarifies a few points after cross-checking against the repository state at commit `ecb6e5e` and later:
+
+1. Packaging behavior correction:
+- Section `1` states integrations are outside `src/` and therefore not shipped because `files` only includes `dist`.
+- In the current repo, `tsconfig.json` includes `integrations`, `tests`, and `examples`, and `build` emits all of them into `dist/`.
+- Because `package.json` publishes `dist`, those emitted files are included in the package output.
+- Evidence: `dist/integrations/email/*`, `dist/tests/orchard.test.js`, `dist/examples/phase1.js`.
+
+2. Re-entrancy risk framing:
+- The listener re-entrancy concern is valid from an operational perspective (ordering/latency), but "corrupt logical invariants" is overstated for the current single-threaded synchronous model.
+- State transitions remain sequential and map writes complete before event publication in each mutating method.
+
+3. Additional gap not called out explicitly:
+- Runtime currently uses Node-specific APIs (`node:crypto`, `Buffer`) in core implementation. This constrains portability to Node-compatible runtimes unless a runtime abstraction layer is introduced.
