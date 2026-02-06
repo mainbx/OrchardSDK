@@ -1,0 +1,28 @@
+---
+title: Thread Lifecycle
+description: Create, operate, and close threads safely.
+---
+
+## Lifecycle
+
+1. Create a thread with `createThread`.
+2. Post messages and action requests while open.
+3. Close the thread with `closeThread` when collaboration is complete.
+
+## Closing behavior
+
+- Closed threads keep full history and remain queryable.
+- New messages and new action requests are rejected after closure.
+- `thread.closed` is appended to the audit stream.
+
+## Example
+
+```ts
+const thread = orchard.createThread({ ownerId: "owner-1" });
+
+orchard.closeThread({
+  threadId: thread.id,
+  closedBy: { type: "human", id: "owner-1" },
+  reason: "Completed",
+});
+```

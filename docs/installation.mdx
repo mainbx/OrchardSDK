@@ -1,0 +1,39 @@
+---
+title: Installation
+description: Install OrchardSDK and run local build/tests.
+---
+
+## Install
+
+```bash
+npm install
+```
+
+## Build and test
+
+```bash
+npm run build
+npm test
+```
+
+## Quick start
+
+```ts
+import { createInMemoryOrchard } from "../src/index.js";
+
+const orchard = createInMemoryOrchard();
+
+const thread = orchard.createThread({ ownerId: "owner-1", title: "Ops" });
+
+orchard.postMessage({
+  threadId: thread.id,
+  sender: { type: "agent", id: "agent-ops" },
+  body: "Proposing a credential rotation.",
+});
+```
+
+## Example script
+
+```bash
+npm run example
+```
