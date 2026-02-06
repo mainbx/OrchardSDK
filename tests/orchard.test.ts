@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  ConflictError,
   InMemoryOrchard,
   IdempotencyConflictError,
   PolicyViolationError,
@@ -252,5 +253,138 @@ describe("InMemoryOrchard", () => {
     }
 
     expect(threadCreated.payload.thread.ownerId).toBe("owner-1");
+  });
+
+  it("closes threads, emits close events, and blocks new messages and action requests", () => {
+    const orchard = createSdk();
+    const thread = orchard.createThread({ ownerId: "owner-1" });
+
+    const closedThread = orchard.closeThread({
+      threadId: thread.id,
+      closedBy: {
+        type: "human",
+        id: "owner-1",
+      },
+      reason: "Conversation complete.",
+    });
+
+    expect(closedThread.closedAt).toBeInstanceOf(Date);
+
+    const closedEvent = orchard.getAuditEvents({ types: ["thread.closed"] })[0];
+    expect(closedEvent?.type).toBe("thread.closed");
+
+    expect(() =>
+      orchard.postMessage({
+        threadId: thread.id,
+        sender: {
+          type: "human",
+          id: "owner-1",
+        },
+        body: "Late message",
+      }),
+    ).toThrow(ConflictError);
+
+    expect(() =>
+      orchard.createActionRequest({
+        threadId: thread.id,
+        requestedBy: {
+          type: "agent",
+          id: "agent-alpha",
+        },
+        actionType: "deploy",
+        payload: {},
+      }),
+    ).toThrow(ConflictError);
+  });
+
+  it("supports idempotent thread closing and rejects non-owner closure", () => {
+    const orchard = createSdk();
+    const thread = orchard.createThread({ ownerId: "owner-1" });
+
+    const firstClose = orchard.closeThread({
+      threadId: thread.id,
+      closedBy: {
+        type: "human",
+        id: "owner-1",
+      },
+      idempotencyKey: "close-1",
+    });
+
+    const secondClose = orchard.closeThread({
+      threadId: thread.id,
+      closedBy: {
+        type: "human",
+        id: "owner-1",
+      },
+      idempotencyKey: "close-1",
+    });
+
+    expect(secondClose.closedAt?.toISOString()).toBe(firstClose.closedAt?.toISOString());
+    expect(orchard.getAuditEvents({ types: ["thread.closed"] })).toHaveLength(1);
+
+    const another = orchard.createThread({ ownerId: "owner-2" });
+    expect(() =>
+      orchard.closeThread({
+        threadId: another.id,
+        closedBy: {
+          type: "human",
+          id: "owner-1",
+        },
+      }),
+    ).toThrow(PolicyViolationError);
+  });
+
+  it("lists threads and action requests, including pending filters", () => {
+    const orchard = createSdk();
+    const threadA = orchard.createThread({ ownerId: "owner-1", title: "A" });
+    const threadB = orchard.createThread({ ownerId: "owner-2", title: "B" });
+
+    const pending = orchard.createActionRequest({
+      threadId: threadA.id,
+      requestedBy: { type: "agent", id: "agent-alpha" },
+      actionType: "rotate_key",
+      payload: { env: "prod" },
+    });
+
+    const resolved = orchard.createActionRequest({
+      threadId: threadB.id,
+      requestedBy: { type: "agent", id: "agent-beta" },
+      actionType: "restart_service",
+      payload: { service: "api" },
+    });
+
+    orchard.decideActionRequest({
+      actionRequestId: resolved.id,
+      decidedBy: { type: "human", id: "owner-2" },
+      decision: "approved",
+    });
+
+    orchard.closeThread({
+      threadId: threadB.id,
+      closedBy: { type: "human", id: "owner-2" },
+    });
+
+    expect(orchard.listThreads()).toHaveLength(2);
+    expect(orchard.listThreads({ includeClosed: false }).map((thread) => thread.id)).toEqual([
+      threadA.id,
+    ]);
+    expect(orchard.listThreads({ ownerId: "owner-2" }).map((thread) => thread.id)).toEqual([
+      threadB.id,
+    ]);
+
+    expect(orchard.listActionRequests()).toHaveLength(2);
+    expect(
+      orchard.listActionRequests({ status: "approved" }).map((actionRequest) => actionRequest.id),
+    ).toEqual([resolved.id]);
+    expect(
+      orchard
+        .listPendingActionRequests()
+        .map((actionRequest) => actionRequest.id),
+    ).toEqual([pending.id]);
+    expect(
+      orchard
+        .listPendingActionRequests({ threadId: threadB.id })
+        .map((actionRequest) => actionRequest.id),
+    ).toEqual([]);
   });
 });

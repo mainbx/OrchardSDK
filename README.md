@@ -43,8 +43,11 @@ Main operations:
 2. `postMessage`
 3. `createActionRequest`
 4. `decideActionRequest` (approve/deny)
-5. `subscribe`
-6. `getAuditEvents`
+5. `closeThread`
+6. `listThreads`
+7. `listActionRequests` / `listPendingActionRequests`
+8. `subscribe`
+9. `getAuditEvents`
 
 ## Example flow
 

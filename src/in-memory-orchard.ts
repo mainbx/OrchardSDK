@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 
 import {
+  type ActionRequestListFilter,
   type ActionApprovalPolicy,
   type ActionRequest,
   type ActionRequestCreatedEvent,
@@ -9,6 +10,7 @@ import {
   type AuditEvent,
   type AuditEventFilter,
   type Clock,
+  type CloseThreadInput,
   type CreateActionRequestInput,
   type CreateThreadInput,
   type DecideActionRequestInput,
@@ -17,10 +19,13 @@ import {
   type MessagePostedEvent,
   type Orchard,
   type OrchardEventListener,
+  type PendingActionRequestFilter,
   type PostMessageInput,
   type SubscriptionFilter,
   type Thread,
+  type ThreadClosedEvent,
   type ThreadCreatedEvent,
+  type ThreadListFilter,
   type Unsubscribe,
   type VerificationPolicy,
 } from "./types.js";
@@ -159,6 +164,7 @@ export class InMemoryOrchard implements Orchard {
     if (idempotent) {
       return idempotent;
     }
+    ensureThreadIsOpen(thread);
 
     const message: Message = {
       id: this.ids.next("msg"),
@@ -235,6 +241,7 @@ export class InMemoryOrchard implements Orchard {
     if (idempotent) {
       return idempotent as ActionRequest<TPayload>;
     }
+    ensureThreadIsOpen(thread);
 
     const actionRequest: ActionRequest<TPayload> = {
       id: this.ids.next("act"),
@@ -377,6 +384,92 @@ export class InMemoryOrchard implements Orchard {
     return clone(approval);
   }
 
+  closeThread(input: CloseThreadInput): Thread {
+    assertNonEmpty(input.threadId, "threadId");
+    assertNonEmpty(input.closedBy.id, "closedBy.id");
+
+    const thread = this.threads.get(input.threadId);
+    if (!thread) {
+      throw new NotFoundError(`Thread '${input.threadId}' was not found.`);
+    }
+
+    if (input.closedBy.type !== "human") {
+      throw new ValidationError("Threads can only be closed by a human participant.");
+    }
+
+    if (thread.ownerId !== input.closedBy.id) {
+      throw new PolicyViolationError(
+        `Thread '${thread.id}' can only be closed by owner '${thread.ownerId}'.`,
+      );
+    }
+
+    const fingerprint = stableStringify({
+      threadId: input.threadId,
+      closedBy: input.closedBy,
+      reason: input.reason,
+      metadata: input.metadata,
+    });
+
+    const idempotent = this.resolveIdempotentResult(
+      `thread.close:${input.threadId}`,
+      input.idempotencyKey,
+      fingerprint,
+      (id) => this.threads.get(id),
+    );
+    if (idempotent) {
+      return idempotent;
+    }
+
+    if (thread.closedAt) {
+      throw new ConflictError(`Thread '${thread.id}' is already closed.`);
+    }
+
+    const closedThread: Thread = {
+      ...thread,
+      closedAt: this.clock.now(),
+    };
+
+    this.threads.set(closedThread.id, closedThread);
+
+    this.recordIdempotency(
+      `thread.close:${input.threadId}`,
+      input.idempotencyKey,
+      fingerprint,
+      closedThread.id,
+    );
+
+    const event: ThreadClosedEvent = {
+      id: this.ids.next("evt"),
+      type: "thread.closed",
+      threadId: closedThread.id,
+      occurredAt: this.clock.now(),
+      payload: {
+        thread: clone(closedThread),
+        closedBy: clone(input.closedBy),
+        ...(input.reason ? { reason: input.reason } : {}),
+        ...(input.metadata ? { metadata: clone(input.metadata) } : {}),
+      },
+    };
+    this.appendAuditEvent(event);
+
+    return clone(closedThread);
+  }
+
+  listThreads(filter: ThreadListFilter = {}): Thread[] {
+    const includeClosed = filter.includeClosed ?? true;
+    const threads = [...this.threads.values()].filter((thread) => {
+      if (filter.ownerId && thread.ownerId !== filter.ownerId) {
+        return false;
+      }
+      if (!includeClosed && thread.closedAt) {
+        return false;
+      }
+      return true;
+    });
+
+    return clone(threads);
+  }
+
   getThread(threadId: string): Thread | undefined {
     const thread = this.threads.get(threadId);
     return thread ? clone(thread) : undefined;
@@ -388,6 +481,34 @@ export class InMemoryOrchard implements Orchard {
       return [];
     }
     return clone(messages);
+  }
+
+  listActionRequests(filter: ActionRequestListFilter = {}): ActionRequest[] {
+    const actionRequests = [...this.actionRequests.values()].filter((actionRequest) => {
+      if (filter.threadId && actionRequest.threadId !== filter.threadId) {
+        return false;
+      }
+      if (filter.status && actionRequest.status !== filter.status) {
+        return false;
+      }
+      if (filter.actionType && actionRequest.actionType !== filter.actionType) {
+        return false;
+      }
+      if (filter.requestedById && actionRequest.requestedBy.id !== filter.requestedById) {
+        return false;
+      }
+      return true;
+    });
+
+    return clone(actionRequests);
+  }
+
+  listPendingActionRequests(filter: PendingActionRequestFilter = {}): ActionRequest[] {
+    return this.listActionRequests({
+      status: "pending",
+      ...(filter.threadId ? { threadId: filter.threadId } : {}),
+      ...(filter.requestedById ? { requestedById: filter.requestedById } : {}),
+    });
   }
 
   getActionRequest(actionRequestId: string): ActionRequest | undefined {
@@ -503,6 +624,12 @@ export const createInMemoryOrchard = (options: InMemoryOrchardOptions = {}): Orc
 const assertNonEmpty = (value: string, fieldName: string): void => {
   if (!value.trim()) {
     throw new ValidationError(`'${fieldName}' must be a non-empty string.`);
+  }
+};
+
+const ensureThreadIsOpen = (thread: Thread): void => {
+  if (thread.closedAt) {
+    throw new ConflictError(`Thread '${thread.id}' is closed and cannot accept new requests.`);
   }
 };
 

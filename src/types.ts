@@ -14,6 +14,7 @@ export interface Thread {
   readonly title?: string;
   readonly metadata?: Record<string, unknown>;
   readonly createdAt: Date;
+  readonly closedAt?: Date;
 }
 
 /** Message posted to a thread by an agent or human participant. */
@@ -118,6 +119,14 @@ export interface DecideActionRequestInput {
   readonly idempotencyKey?: string;
 }
 
+export interface CloseThreadInput {
+  readonly threadId: string;
+  readonly closedBy: ParticipantRef & { readonly type: "human" };
+  readonly reason?: string;
+  readonly metadata?: Record<string, unknown>;
+  readonly idempotencyKey?: string;
+}
+
 export interface AuditEventBase<TType extends string, TPayload> {
   readonly id: string;
   readonly type: TType;
@@ -140,6 +149,16 @@ export type MessagePostedEvent = AuditEventBase<
   }
 >;
 
+export type ThreadClosedEvent = AuditEventBase<
+  "thread.closed",
+  {
+    readonly thread: Thread;
+    readonly closedBy: ParticipantRef & { readonly type: "human" };
+    readonly reason?: string;
+    readonly metadata?: Record<string, unknown>;
+  }
+>;
+
 export type ActionRequestCreatedEvent = AuditEventBase<
   "action_request.created",
   {
@@ -158,6 +177,7 @@ export type ActionRequestDecidedEvent = AuditEventBase<
 export type AuditEvent =
   | ThreadCreatedEvent
   | MessagePostedEvent
+  | ThreadClosedEvent
   | ActionRequestCreatedEvent
   | ActionRequestDecidedEvent;
 
@@ -171,6 +191,23 @@ export interface AuditEventFilter {
 export interface SubscriptionFilter {
   readonly threadId?: string;
   readonly types?: readonly AuditEventType[];
+}
+
+export interface ThreadListFilter {
+  readonly ownerId?: string;
+  readonly includeClosed?: boolean;
+}
+
+export interface ActionRequestListFilter {
+  readonly threadId?: string;
+  readonly status?: ActionRequestStatus;
+  readonly actionType?: string;
+  readonly requestedById?: string;
+}
+
+export interface PendingActionRequestFilter {
+  readonly threadId?: string;
+  readonly requestedById?: string;
 }
 
 export type OrchardEventListener = (event: AuditEvent) => void;
@@ -195,9 +232,14 @@ export interface Orchard {
   ): ActionRequest<TPayload>;
   /** Approve or deny an action request with optional verification metadata. */
   decideActionRequest(input: DecideActionRequestInput): Approval;
+  /** Close a thread to prevent new messages and action requests. */
+  closeThread(input: CloseThreadInput): Thread;
 
+  listThreads(filter?: ThreadListFilter): Thread[];
   getThread(threadId: string): Thread | undefined;
   getMessages(threadId: string): Message[];
+  listActionRequests(filter?: ActionRequestListFilter): ActionRequest[];
+  listPendingActionRequests(filter?: PendingActionRequestFilter): ActionRequest[];
   getActionRequest(actionRequestId: string): ActionRequest | undefined;
   getApprovals(actionRequestId: string): Approval[];
   /** Read immutable audit events (append-only) for observability and replay. */
