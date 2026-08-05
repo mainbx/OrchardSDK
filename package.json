@@ -29,6 +29,9 @@
     "@types/node": "^25.2.1",
     "tsx": "^4.20.3",
     "typescript": "^5.9.0",
-    "vitest": "^3.2.4"
+    "vitest": "^4.1.10"
+  },
+  "overrides": {
+    "esbuild": "^0.28.1"
   }
 }
